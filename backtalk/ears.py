@@ -323,6 +323,15 @@ def warm():
     return _model
 
 
+def _vocabulary_prompt() -> str | None:
+    """Build the initial-prompt string from stt_vocabulary, or None if
+    empty. A prior transcript primes Whisper's decoder toward matching
+    style and spelling, so a plain comma list of the words to favor
+    works as a cheap stand-in for one -- no real audio needed."""
+    words = [str(w).strip() for w in CFG.get("stt_vocabulary", []) if str(w).strip()]
+    return ", ".join(words) if words else None
+
+
 def transcribe(pcm: np.ndarray) -> str:
     """int16 mono 16kHz -> text. Bracketed non-speech markers that
     whisper emits ([BLANK_AUDIO], [SIGHS], (coughs)...) are stripped;
@@ -330,13 +339,16 @@ def transcribe(pcm: np.ndarray) -> str:
     model = warm()
     audio = pcm.astype(np.float32) / 32768.0
     lang = "en" if CFG["stt_model"].endswith(".en") else None
+    prompt = _vocabulary_prompt()
     if _backend == "mlx":
         import mlx_whisper
         text = mlx_whisper.transcribe(audio, path_or_hf_repo=model,
                                       temperature=0.0, language=lang,
+                                      initial_prompt=prompt,
                                       verbose=None)["text"].strip()
     else:
-        segments, _ = model.transcribe(audio, temperature=0.0, language=lang)
+        segments, _ = model.transcribe(audio, temperature=0.0, language=lang,
+                                        initial_prompt=prompt)
         text = "".join(s.text for s in segments).strip()
     return _NONSPEECH.sub("", text).strip()
 
